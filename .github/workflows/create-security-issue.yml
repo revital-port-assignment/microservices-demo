@@ -27,6 +27,10 @@ on:
         description: "CVE / vulnerability external ID (e.g. CVE-2024-1234)"
         required: false
         type: string
+      port_run_id:
+        description: "Port action run ID for callback reporting"
+        required: false
+        type: string
 
 jobs:
   create-issue:
@@ -44,6 +48,7 @@ jobs:
           echo "vulnerability_workload_id: ${{ inputs.vulnerability_workload_id }}"
           echo "service_name:              ${{ inputs.service_name }}"
           echo "cve_id:                    ${{ inputs.cve_id }}"
+          echo "port_run_id:               ${{ inputs.port_run_id }}"
 
       - name: Resolve team member
         id: resolve_member
@@ -68,10 +73,50 @@ jobs:
 
           BODY=$(printf "%s\n\n---\n\n%s" "$PORTAL_LINK" "$(cat /tmp/remediation_plan.md)")
 
-          gh issue create \
+          ISSUE_URL=$(gh issue create \
             --repo "$REPO" \
             --title "$TITLE" \
             --body "$BODY" \
             --label "security" \
             --label "priority: $(echo '${{ inputs.priority }}' | tr '[:upper:]' '[:lower:]')" \
-            --assignee "${{ steps.resolve_member.outputs.assignee }}"
+            --assignee "${{ steps.resolve_member.outputs.assignee }}")
+ 
+          echo "issue_url=$ISSUE_URL" >> $GITHUB_OUTPUT
+ 
+      - name: Report success to Port
+        if: ${{ inputs.port_run_id != '' && success() }}
+        env:
+          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+        run: |
+          ACCESS_TOKEN=$(curl -s --location --request POST 'https://api.port.io/v1/auth/access_token' \
+            --header 'Content-Type: application/json' \
+            --data-raw "{\"clientId\": \"$PORT_CLIENT_ID\", \"clientSecret\": \"$PORT_CLIENT_SECRET\"}" \
+            | jq -r '.accessToken')
+ 
+          curl --location --request PATCH "https://api.port.io/v1/actions/runs/${{ inputs.port_run_id }}" \
+            --header "Authorization: Bearer $ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-raw "{
+              \"status\": \"SUCCESS\",
+              \"message\": {\"run_status\": \"GitHub issue created: ${{ steps.create_issue.outputs.issue_url }}\"}
+            }"
+ 
+      - name: Report failure to Port
+        if: ${{ inputs.port_run_id != '' && failure() }}
+        env:
+          PORT_CLIENT_ID: ${{ secrets.PORT_CLIENT_ID }}
+          PORT_CLIENT_SECRET: ${{ secrets.PORT_CLIENT_SECRET }}
+        run: |
+          ACCESS_TOKEN=$(curl -s --location --request POST 'https://api.port.io/v1/auth/access_token' \
+            --header 'Content-Type: application/json' \
+            --data-raw "{\"clientId\": \"$PORT_CLIENT_ID\", \"clientSecret\": \"$PORT_CLIENT_SECRET\"}" \
+            | jq -r '.accessToken')
+ 
+          curl --location --request PATCH "https://api.port.io/v1/actions/runs/${{ inputs.port_run_id }}" \
+            --header "Authorization: Bearer $ACCESS_TOKEN" \
+            --header 'Content-Type: application/json' \
+            --data-raw "{
+              \"status\": \"FAILURE\",
+              \"message\": {\"run_status\": \"GitHub issue creation failed\"}
+            }"
