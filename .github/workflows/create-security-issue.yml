@@ -1,0 +1,61 @@
+name: Create Security Remediation Issue
+
+on:
+  workflow_dispatch:
+    inputs:
+      remediation_plan:
+        description: "Remediation plan markdown content"
+        required: true
+        type: string
+      priority:
+        description: "Issue priority (Low/Medium/High/Critical)"
+        required: true
+        type: string
+      github_team_slug:
+        description: "GitHub team slug to assign (from git_hub_team relation)"
+        required: true
+        type: string
+      vulnerability_workload_id:
+        description: "VulnerabilityWorkload entity identifier in Port"
+        required: false
+        type: string
+      service_name:
+        description: "Service name"
+        required: true
+        type: string
+      cve_id:
+        description: "CVE / vulnerability external ID (e.g. CVE-2024-1234)"
+        required: false
+        type: string
+
+jobs:
+  create-issue:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Issue
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: |
+          TITLE="[${{ inputs.priority }}]"
+          if [ -n "${{ inputs.cve_id }}" ]; then
+            TITLE="$TITLE ${{ inputs.cve_id }} -"
+          fi
+          TITLE="$TITLE ${{ inputs.service_name }}"
+
+          PORTAL_LINK=""
+          if [ -n "${{ inputs.vulnerability_workload_id }}" ]; then
+            PORTAL_LINK="> 🔗 [View VulnerabilityWorkload in Port](https://app.getport.io/vulnerabilityWorkloadEntity?identifier=${{ inputs.vulnerability_workload_id }})"
+          fi
+
+          BODY=$(printf "%s\n\n---\n\n%s" \
+            "$PORTAL_LINK" \
+            "${{ inputs.remediation_plan }}")
+
+          gh issue create \
+            --repo "$REPO" \
+            --title "$TITLE" \
+            --body "$BODY" \
+            --label "security" \
+            --label "priority: $(echo '${{ inputs.priority }}' | tr '[:upper:]' '[:lower:]')" \
+            --assignee "@${{ inputs.github_team_slug }}"
