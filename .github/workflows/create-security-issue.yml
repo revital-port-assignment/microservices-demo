@@ -37,6 +37,14 @@ jobs:
           REMEDIATION_PLAN: ${{ inputs.remediation_plan }}
         run: echo "$REMEDIATION_PLAN" > /tmp/remediation_plan.md
 
+      - name: Print inputs
+        run: |
+          echo "priority:                  ${{ inputs.priority }}"
+          echo "github_team_slug:          ${{ inputs.github_team_slug }}"
+          echo "vulnerability_workload_id: ${{ inputs.vulnerability_workload_id }}"
+          echo "service_name:              ${{ inputs.service_name }}"
+          echo "cve_id:                    ${{ inputs.cve_id }}"
+
       - name: Resolve team member
         id: resolve_member
         env:
