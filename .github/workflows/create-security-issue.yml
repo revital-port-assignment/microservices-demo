@@ -32,25 +32,33 @@ jobs:
   create-issue:
     runs-on: ubuntu-latest
     steps:
+      - name: Write remediation plan to file
+        env:
+          REMEDIATION_PLAN: ${{ inputs.remediation_plan }}
+        run: echo "$REMEDIATION_PLAN" > /tmp/remediation_plan.md
+
+      - name: Resolve team member
+        id: resolve_member
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          MEMBER=$(gh api orgs/${{ github.repository_owner }}/teams/${{ inputs.github_team_slug }}/members --jq '.[0].login')
+          echo "assignee=$MEMBER" >> $GITHUB_OUTPUT
+
       - name: Create GitHub Issue
         env:
           GH_TOKEN: ${{ secrets.GH_TOKEN }}
           REPO: ${{ github.repository }}
         run: |
           TITLE="[${{ inputs.priority }}]"
-          if [ -n "${{ inputs.cve_id }}" ]; then
-            TITLE="$TITLE ${{ inputs.cve_id }} -"
-          fi
+          [ -n "${{ inputs.cve_id }}" ] && TITLE="$TITLE ${{ inputs.cve_id }} -"
           TITLE="$TITLE ${{ inputs.service_name }}"
 
           PORTAL_LINK=""
-          if [ -n "${{ inputs.vulnerability_workload_id }}" ]; then
-            PORTAL_LINK="> 🔗 [View VulnerabilityWorkload in Port](https://app.getport.io/vulnerabilityWorkloadEntity?identifier=${{ inputs.vulnerability_workload_id }})"
-          fi
+          [ -n "${{ inputs.vulnerability_workload_id }}" ] && \
+            PORTAL_LINK="> 🔗 [View in Port](https://app.getport.io/vulnerabilityWorkloadEntity?identifier=${{ inputs.vulnerability_workload_id }})"
 
-          BODY=$(printf "%s\n\n---\n\n%s" \
-            "$PORTAL_LINK" \
-            "${{ inputs.remediation_plan }}")
+          BODY=$(printf "%s\n\n---\n\n%s" "$PORTAL_LINK" "$(cat /tmp/remediation_plan.md)")
 
           gh issue create \
             --repo "$REPO" \
@@ -58,4 +66,4 @@ jobs:
             --body "$BODY" \
             --label "security" \
             --label "priority: $(echo '${{ inputs.priority }}' | tr '[:upper:]' '[:lower:]')" \
-            --assignee "@${{ inputs.github_team_slug }}"
+            --assignee "${{ steps.resolve_member.outputs.assignee }}"
